@@ -143,3 +143,51 @@ label {
   margin: 0 0 0.5rem;
   font-size: 0.95rem;
 }
+
+.recording-steps {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.recording-steps li {
+  margin-bottom: 0.35rem;
+}
+
+.recording-status {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.recording-status[data-active="true"] {
+  background: #fef2f2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.recording-optional {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -36,7 +36,7 @@ export function useBrowserWhisper() {
     try {
       await loadTranscriber();
       setStatus("ready");
-      setMessage("Model ready. Record your answer, then Submit.");
+      setMessage("Model ready — you can Start recording whenever you like.");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Failed to load model");
@@ -61,7 +61,9 @@ export function useBrowserWhisper() {
         });
         const text = String(result?.text ?? "").trim();
         if (!text) {
-          throw new Error("No speech detected in recording");
+          throw new Error(
+            "We couldn't detect speech. Use Start recording, speak clearly for 5–10 seconds, then Submit & evaluate. Check your microphone and try again."
+          );
         }
         setStatus("ready");
         setMessage("");

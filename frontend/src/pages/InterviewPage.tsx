@@ -52,7 +52,23 @@ export default function InterviewPage() {
     if (mode === "web_speech") {
       return { text: speech.transcript.trim(), source: "web_speech" };
     }
-    const blob = await recorder.stop();
+    if (!recorder.hasStarted) {
+      throw new Error(
+        "Click Start recording first, allow the microphone, speak your answer, then click Submit & evaluate."
+      );
+    }
+    let blob: Blob;
+    try {
+      blob = await recorder.stop();
+    } catch {
+      throw new Error(
+        "Click Start recording first, allow the microphone, speak your answer, then click Submit & evaluate."
+      );
+    }
+    const validationError = recorder.validateBlob(blob, recorder.lastDurationSec);
+    if (validationError) {
+      throw new Error(validationError);
+    }
     const text = await browserWhisper.transcribe(blob);
     setLastTranscript(text);
     return { text, source: "browser_whisper" };
@@ -103,6 +119,7 @@ export default function InterviewPage() {
     setLastTranscript("");
     speech.reset();
     browserWhisper.reset();
+    recorder.reset();
     setManualText("");
   }
 
@@ -150,27 +167,57 @@ export default function InterviewPage() {
 
         {mode === "browser_whisper" && (
           <div style={{ marginTop: "1rem" }}>
-            <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: 0 }}>
-              Speech runs in your browser — no server RAM needed. First use downloads
-              a small model (~40MB) and caches it.
+            <ol className="recording-steps">
+              <li>
+                Click <strong>Start recording</strong> and allow microphone access.
+              </li>
+              <li>Speak your answer clearly for at least <strong>5–10 seconds</strong>.</li>
+              <li>
+                Click <strong>Submit &amp; evaluate</strong> when you are done (this stops
+                recording and transcribes).
+              </li>
+            </ol>
+            <p className="recording-status" data-active={recorder.recording}>
+              {recorder.recording
+                ? "● Recording — speak now, then click Submit & evaluate"
+                : recorder.hasStarted
+                  ? "Recording stopped — click Submit & evaluate or Start recording again"
+                  : "Not recording — click Start recording to begin"}
             </p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button
                 type="button"
-                className="secondary"
-                onClick={() => browserWhisper.preloadModel().catch(() => {})}
-                disabled={browserWhisper.isBusy}
+                onClick={() => recorder.start().catch(() => setError("Microphone access was denied or unavailable."))}
+                disabled={recorder.recording || busy}
               >
-                Preload model
+                Start recording
               </button>
               <button
                 type="button"
-                onClick={recorder.start}
-                disabled={recorder.recording || busy}
+                className="secondary"
+                onClick={() =>
+                  recorder.stop().catch(() => {
+                    /* ignore if not active */
+                  })
+                }
+                disabled={!recorder.recording || busy}
               >
-                {recorder.recording ? "Recording..." : "Start recording"}
+                Stop recording
               </button>
             </div>
+            <p className="recording-optional">
+              Optional:{" "}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => browserWhisper.preloadModel().catch(() => {})}
+                disabled={browserWhisper.isBusy}
+              >
+                Download speech model early
+              </button>{" "}
+              (~40MB once per browser). You do <em>not</em> need this before recording —
+              Submit downloads it automatically the first time.
+            </p>
             {browserWhisper.message && (
               <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
                 {browserWhisper.message}
@@ -184,6 +231,7 @@ export default function InterviewPage() {
                 rows={4}
                 readOnly
                 value={lastTranscript}
+                placeholder="Your transcript will appear here after submit..."
                 style={{ marginTop: "0.75rem" }}
               />
             )}
