@@ -4,7 +4,8 @@ import { api } from "@/api/client";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useWebSpeech } from "@/hooks/useWebSpeech";
-import type { Question, Score, TranscriptSource } from "@/types";
+import { TranscriptPanel } from "@/components/TranscriptPanel";
+import type { Question, Score, SessionHistory, TranscriptSource } from "@/types";
 
 export default function InterviewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -15,6 +16,14 @@ export default function InterviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [score, setScore] = useState<Score | null>(null);
+  const [submittedTranscript, setSubmittedTranscript] = useState<{
+    text: string;
+    source: TranscriptSource;
+  } | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState<SessionHistory | null>(
+    null
+  );
 
   const speech = useWebSpeech();
   const recorder = useAudioRecorder();
@@ -22,9 +31,14 @@ export default function InterviewPage() {
   useEffect(() => {
     if (!sessionId) return;
     api.listQuestions(sessionId).then(setQuestions).catch(console.error);
+    api.sessionHistory(sessionId).then(setSessionHistory).catch(() => {});
   }, [sessionId]);
 
   const current = questions[index];
+
+  const savedAnswer = sessionHistory?.questions
+    .find((q) => q.question.id === current?.id)
+    ?.answers.at(-1);
 
   async function getTranscript(): Promise<{ text: string; source: TranscriptSource }> {
     if (mode === "text") {
@@ -52,6 +66,23 @@ export default function InterviewPage() {
       });
       const result = await api.evaluate(answer.id);
       setScore(result);
+      setSubmittedTranscript({ text, source });
+      setShowTranscript(true);
+      setSessionHistory((prev) => {
+        if (!prev || !current) return prev;
+        const updated = structuredClone(prev);
+        const entry = updated.questions.find((q) => q.question.id === current.id);
+        if (entry) {
+          entry.answers.push({
+            id: answer.id,
+            transcript: text,
+            transcript_source: source,
+            created_at: answer.created_at,
+            score: result,
+          });
+        }
+        return updated;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
     } finally {
@@ -146,10 +177,26 @@ export default function InterviewPage() {
 
       {error && <p className="error">{error}</p>}
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: "0.5rem",
+          marginBottom: "1rem",
+          flexWrap: "wrap",
+        }}
+      >
         <button type="button" onClick={submitAndEvaluate} disabled={loading}>
           {loading ? "Evaluating..." : "Submit & evaluate"}
         </button>
+        {(submittedTranscript || savedAnswer) && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setShowTranscript((v) => !v)}
+          >
+            {showTranscript ? "Hide transcript" : "Show transcript"}
+          </button>
+        )}
         {index < questions.length - 1 && (
           <button
             type="button"
@@ -158,6 +205,8 @@ export default function InterviewPage() {
             onClick={() => {
               setIndex((i) => i + 1);
               setScore(null);
+              setSubmittedTranscript(null);
+              setShowTranscript(false);
               speech.reset();
               setManualText("");
             }}
@@ -166,6 +215,17 @@ export default function InterviewPage() {
           </button>
         )}
       </div>
+
+      {showTranscript && (submittedTranscript || savedAnswer) && (
+        <TranscriptPanel
+          transcript={
+            submittedTranscript?.text ?? savedAnswer!.transcript
+          }
+          source={
+            submittedTranscript?.source ?? savedAnswer!.transcript_source
+          }
+        />
+      )}
 
       {score && <ScoreDisplay score={score} />}
     </div>

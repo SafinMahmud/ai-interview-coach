@@ -16,6 +16,9 @@ frontend/dist/
 .vscode/
 .DS_Store
 
+# Local deploy notes (not for repo)
+PUBLISH_FREE.md
+
 # Local ML model cache (root only — do not use bare `models/`, it ignores ORM package)
 .cache/
 /models/

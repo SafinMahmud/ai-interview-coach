@@ -20,7 +20,15 @@ async def generate_questions(
             session_id, force=force
         )
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        message = str(exc)
+        if "Missing API key" in message:
+            raise HTTPException(status_code=503, detail=message) from exc
+        raise HTTPException(status_code=404, detail=message) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Question generation failed: {exc}",
+        ) from exc
 
     return QuestionsGenerateResponse(
         session_id=session_id,

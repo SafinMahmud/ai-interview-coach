@@ -51,3 +51,24 @@ export interface AnswerResponse {
   created_at: string;
   has_score: boolean;
 }
+
+export interface AnswerWithScore {
+  id: string;
+  transcript: string;
+  transcript_source: string;
+  created_at: string;
+  score: Score | null;
+}
+
+export interface QuestionWithAnswers {
+  question: Question;
+  answers: AnswerWithScore[];
+}
+
+export interface SessionHistory {
+  session_id: string;
+  company_name: string | null;
+  created_at: string;
+  questions: QuestionWithAnswers[];
+  average_scores: Record<string, number | null>;
+}

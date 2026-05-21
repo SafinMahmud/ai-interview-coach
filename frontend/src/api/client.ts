@@ -80,5 +80,7 @@ export const api = {
     request<import("@/types").SessionSummary[]>("/api/v1/sessions"),
 
   sessionHistory: (sessionId: string) =>
-    request<unknown>(`/api/v1/sessions/${sessionId}/history`),
+    request<import("@/types").SessionHistory>(
+      `/api/v1/sessions/${sessionId}/history`
+    ),
 };

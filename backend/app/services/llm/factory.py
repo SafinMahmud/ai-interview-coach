@@ -8,6 +8,7 @@ from app.services.llm.providers import AnthropicProvider, GroqProvider, OpenAIPr
 @lru_cache
 def get_llm_client() -> LLMClient:
     settings = get_settings()
+    settings.validate_llm_api_key()
     providers: dict[LLMProvider, type[LLMClient]] = {
         LLMProvider.GROQ: GroqProvider,
         LLMProvider.OPENAI: OpenAIProvider,
