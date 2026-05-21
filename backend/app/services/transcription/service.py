@@ -17,8 +17,10 @@ def _get_whisper_model():
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise TranscriptionUnavailableError(
-            "faster-whisper is not installed. "
-            "Install with: pip install faster-whisper"
+            "Server-side faster-whisper is not installed. "
+            "Local dev only: pip install -r requirements-local.txt. "
+            "On the hosted app use Record (browser Whisper) in the UI — "
+            "do not call /api/v1/transcribe."
         ) from exc
 
     settings = get_settings()
@@ -33,8 +35,8 @@ def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> str:
     settings = get_settings()
     if not settings.enable_local_whisper:
         raise TranscriptionUnavailableError(
-            "Server-side Whisper is disabled on this host (not enough memory). "
-            "Use Web Speech or type your answer in the app."
+            "Server-side Whisper is disabled on this host (Render free tier). "
+            "In the app choose Record (browser Whisper), Live captions, or Type answer."
         )
 
     suffix = Path(filename).suffix or ".webm"

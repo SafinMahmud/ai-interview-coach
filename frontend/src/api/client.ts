@@ -69,15 +69,6 @@ export const api = {
       method: "POST",
     }),
 
-  transcribe: async (file: Blob, filename = "recording.webm") => {
-    const form = new FormData();
-    form.append("file", file, filename);
-    return request<{ transcript: string }>("/api/v1/transcribe", {
-      method: "POST",
-      body: form,
-    });
-  },
-
   listSessions: () =>
     request<import("@/types").SessionSummary[]>("/api/v1/sessions"),
 
