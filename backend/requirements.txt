@@ -10,5 +10,5 @@ openai>=1.55.0
 anthropic>=0.39.0
 python-dotenv>=1.0.0
 
-# Local transcription (Record → Whisper in UI); large download on first use
-faster-whisper>=1.1.0
+# For local Whisper only (do NOT install on Render — exceeds free-tier RAM):
+# pip install -r requirements-local.txt

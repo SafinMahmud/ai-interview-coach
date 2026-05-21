@@ -3,19 +3,23 @@ import { useParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import { useBrowserWhisper } from "@/hooks/useBrowserWhisper";
 import { useWebSpeech } from "@/hooks/useWebSpeech";
 import { TranscriptPanel } from "@/components/TranscriptPanel";
 import type { Question, Score, SessionHistory, TranscriptSource } from "@/types";
+
+type AnswerMode = "browser_whisper" | "web_speech" | "text";
 
 export default function InterviewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [manualText, setManualText] = useState("");
-  const [mode, setMode] = useState<"web_speech" | "whisper" | "text">("web_speech");
+  const [mode, setMode] = useState<AnswerMode>("browser_whisper");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [score, setScore] = useState<Score | null>(null);
+  const [lastTranscript, setLastTranscript] = useState("");
   const [submittedTranscript, setSubmittedTranscript] = useState<{
     text: string;
     source: TranscriptSource;
@@ -27,6 +31,7 @@ export default function InterviewPage() {
 
   const speech = useWebSpeech();
   const recorder = useAudioRecorder();
+  const browserWhisper = useBrowserWhisper();
 
   useEffect(() => {
     if (!sessionId) return;
@@ -48,8 +53,9 @@ export default function InterviewPage() {
       return { text: speech.transcript.trim(), source: "web_speech" };
     }
     const blob = await recorder.stop();
-    const { transcript } = await api.transcribe(blob);
-    return { text: transcript, source: "local_whisper" };
+    const text = await browserWhisper.transcribe(blob);
+    setLastTranscript(text);
+    return { text, source: "browser_whisper" };
   }
 
   async function submitAndEvaluate() {
@@ -90,9 +96,21 @@ export default function InterviewPage() {
     }
   }
 
+  function resetQuestionState() {
+    setScore(null);
+    setSubmittedTranscript(null);
+    setShowTranscript(false);
+    setLastTranscript("");
+    speech.reset();
+    browserWhisper.reset();
+    setManualText("");
+  }
+
   if (!current) {
     return <p>Loading questions...</p>;
   }
+
+  const busy = loading || browserWhisper.isBusy;
 
   return (
     <div>
@@ -109,17 +127,17 @@ export default function InterviewPage() {
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <button
             type="button"
-            className={mode === "web_speech" ? "" : "secondary"}
-            onClick={() => setMode("web_speech")}
+            className={mode === "browser_whisper" ? "" : "secondary"}
+            onClick={() => setMode("browser_whisper")}
           >
-            Web Speech (demo)
+            Record (browser Whisper)
           </button>
           <button
             type="button"
-            className={mode === "whisper" ? "" : "secondary"}
-            onClick={() => setMode("whisper")}
+            className={mode === "web_speech" ? "" : "secondary"}
+            onClick={() => setMode("web_speech")}
           >
-            Record → Whisper
+            Live captions (Chrome)
           </button>
           <button
             type="button"
@@ -130,10 +148,55 @@ export default function InterviewPage() {
           </button>
         </div>
 
+        {mode === "browser_whisper" && (
+          <div style={{ marginTop: "1rem" }}>
+            <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: 0 }}>
+              Speech runs in your browser — no server RAM needed. First use downloads
+              a small model (~40MB) and caches it.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => browserWhisper.preloadModel().catch(() => {})}
+                disabled={browserWhisper.isBusy}
+              >
+                Preload model
+              </button>
+              <button
+                type="button"
+                onClick={recorder.start}
+                disabled={recorder.recording || busy}
+              >
+                {recorder.recording ? "Recording..." : "Start recording"}
+              </button>
+            </div>
+            {browserWhisper.message && (
+              <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
+                {browserWhisper.message}
+              </p>
+            )}
+            {browserWhisper.error && (
+              <p className="error">{browserWhisper.error}</p>
+            )}
+            {lastTranscript && (
+              <textarea
+                rows={4}
+                readOnly
+                value={lastTranscript}
+                style={{ marginTop: "0.75rem" }}
+              />
+            )}
+          </div>
+        )}
+
         {mode === "web_speech" && (
           <div style={{ marginTop: "1rem" }}>
             {!speech.supported && (
-              <p className="error">Web Speech API not supported in this browser.</p>
+              <p className="error">
+                Web Speech is not supported here. Use Record (browser Whisper) or
+                type your answer. Chrome desktop works best.
+              </p>
             )}
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button type="button" onClick={speech.start} disabled={speech.listening}>
@@ -147,20 +210,9 @@ export default function InterviewPage() {
               rows={5}
               readOnly
               value={speech.transcript}
-              placeholder="Transcript appears here..."
+              placeholder="Live transcript appears here..."
               style={{ marginTop: "0.75rem" }}
             />
-          </div>
-        )}
-
-        {mode === "whisper" && (
-          <div style={{ marginTop: "1rem" }}>
-            <button type="button" onClick={recorder.start} disabled={recorder.recording}>
-              {recorder.recording ? "Recording..." : "Start recording"}
-            </button>
-            <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
-              Stop recording when you submit — audio is sent to the backend for transcription.
-            </p>
           </div>
         )}
 
@@ -185,8 +237,12 @@ export default function InterviewPage() {
           flexWrap: "wrap",
         }}
       >
-        <button type="button" onClick={submitAndEvaluate} disabled={loading}>
-          {loading ? "Evaluating..." : "Submit & evaluate"}
+        <button type="button" onClick={submitAndEvaluate} disabled={busy}>
+          {loading
+            ? mode === "browser_whisper"
+              ? "Transcribing & evaluating..."
+              : "Evaluating..."
+            : "Submit & evaluate"}
         </button>
         {(submittedTranscript || savedAnswer) && (
           <button
@@ -204,11 +260,7 @@ export default function InterviewPage() {
             disabled={!score}
             onClick={() => {
               setIndex((i) => i + 1);
-              setScore(null);
-              setSubmittedTranscript(null);
-              setShowTranscript(false);
-              speech.reset();
-              setManualText("");
+              resetQuestionState();
             }}
           >
             Next question
@@ -218,12 +270,8 @@ export default function InterviewPage() {
 
       {showTranscript && (submittedTranscript || savedAnswer) && (
         <TranscriptPanel
-          transcript={
-            submittedTranscript?.text ?? savedAnswer!.transcript
-          }
-          source={
-            submittedTranscript?.source ?? savedAnswer!.transcript_source
-          }
+          transcript={submittedTranscript?.text ?? savedAnswer!.transcript}
+          source={submittedTranscript?.source ?? savedAnswer!.transcript_source}
         />
       )}
 

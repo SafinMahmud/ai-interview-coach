@@ -1,4 +1,8 @@
-export type TranscriptSource = "local_whisper" | "web_speech" | "text";
+export type TranscriptSource =
+  | "local_whisper"
+  | "browser_whisper"
+  | "web_speech"
+  | "text";
 
 export interface SessionDetail {
   id: string;

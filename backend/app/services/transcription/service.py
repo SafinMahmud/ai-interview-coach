@@ -30,6 +30,13 @@ def _get_whisper_model():
 
 
 def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> str:
+    settings = get_settings()
+    if not settings.enable_local_whisper:
+        raise TranscriptionUnavailableError(
+            "Server-side Whisper is disabled on this host (not enough memory). "
+            "Use Web Speech or type your answer in the app."
+        )
+
     suffix = Path(filename).suffix or ".webm"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(file_bytes)

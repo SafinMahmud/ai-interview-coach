@@ -50,6 +50,16 @@ def create_app() -> FastAPI:
         detail = str(exc) if settings.debug else "Internal server error"
         return JSONResponse(status_code=500, content={"detail": detail})
 
+    @app.get("/")
+    def root():
+        return {
+            "app": settings.app_name,
+            "status": "ok",
+            "docs": "/docs",
+            "health": "/health",
+            "api": "/api/v1",
+        }
+
     @app.get("/health")
     def health():
         return {"status": "ok", "app": settings.app_name}

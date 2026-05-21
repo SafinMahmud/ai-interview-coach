@@ -47,10 +47,12 @@ Open http://localhost:5173
 ### Optional: local Whisper
 
 ```bash
-pip install faster-whisper
+pip install -r requirements-local.txt
 ```
 
-Set `WHISPER_MODEL_SIZE=base` in `.env`. Without this, use **Web Speech** or **type answer** in the UI.
+Set `ENABLE_LOCAL_WHISPER=true` and `WHISPER_MODEL_SIZE=base` in `.env`.
+
+**Render free tier:** keep `ENABLE_LOCAL_WHISPER=false` and do not install `faster-whisper` (it exceeds ~512MB RAM). Use **Web Speech** or **type answer** on the hosted app.
 
 ## Environment variables
 
@@ -63,6 +65,7 @@ Set `WHISPER_MODEL_SIZE=base` in `.env`. Without this, use **Web Speech** or **t
 | `GROQ_API_KEY` | `gsk_...` | Required when provider is groq |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated frontend URLs |
 | `DATABASE_URL` | `sqlite:///./interview_coach.db` | SQLite path |
+| `ENABLE_LOCAL_WHISPER` | `false` on Render | Server-side Whisper; `false` in production |
 
 ### Frontend (`frontend/.env`)
 
