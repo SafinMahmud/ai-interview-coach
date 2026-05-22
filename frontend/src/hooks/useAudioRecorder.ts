@@ -2,11 +2,18 @@ import { useCallback, useRef, useState } from "react";
 
 const MIN_BLOB_BYTES = 2000;
 
-const PREFERRED_MIME = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-  ? "audio/webm;codecs=opus"
-  : "audio/webm";
+function pickMimeType(): string {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "audio/webm";
+}
 
-/** MediaRecorder for in-browser Whisper transcription. */
+const PREFERRED_MIME = typeof MediaRecorder !== "undefined" ? pickMimeType() : "audio/webm";
+
+/** MediaRecorder for optional browser Whisper fallback. */
 export function useAudioRecorder() {
   const [recording, setRecording] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -15,24 +22,27 @@ export function useAudioRecorder() {
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
+  const mimeRef = useRef(PREFERRED_MIME);
 
-  const buildBlob = () => new Blob(chunksRef.current, { type: PREFERRED_MIME });
+  const buildBlob = () => new Blob(chunksRef.current, { type: mimeRef.current });
 
   const start = useCallback(async () => {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        // noiseSuppression/autoGainControl can zero-out speech on some Macs → blank Whisper
+        noiseSuppression: false,
+        autoGainControl: false,
       },
     });
-    const recorder = new MediaRecorder(stream, { mimeType: PREFERRED_MIME });
+    const mime = pickMimeType();
+    mimeRef.current = mime;
+    const recorder = new MediaRecorder(stream, { mimeType: mime });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
-    // Timeslice so audio is captured even if Stop is used before Submit
-    recorder.start(500);
+    recorder.start(250);
     mediaRef.current = recorder;
     startedAtRef.current = Date.now();
     setHasStarted(true);
@@ -48,12 +58,17 @@ export function useAudioRecorder() {
         return;
       }
 
-      if (isStopped || !mediaRef.current) {
+      if (isStopped && !mediaRef.current) {
         resolve(buildBlob());
         return;
       }
 
       const recorder = mediaRef.current;
+      if (!recorder) {
+        resolve(buildBlob());
+        return;
+      }
+
       if (recorder.state === "inactive") {
         setIsStopped(true);
         setRecording(false);
@@ -70,6 +85,10 @@ export function useAudioRecorder() {
         mediaRef.current = null;
         resolve(buildBlob());
       };
+
+      if (recorder.state === "recording") {
+        recorder.requestData();
+      }
       recorder.stop();
     });
   }, [hasStarted, isStopped]);
@@ -89,10 +108,10 @@ export function useAudioRecorder() {
 
   const validateBlob = useCallback((blob: Blob, durationSec: number | null) => {
     if (blob.size < MIN_BLOB_BYTES) {
-      return "Recording was empty or too short. Click Start recording, speak for at least 5 seconds, then Submit.";
+      return "Recording was empty or too short. Record at least 5 seconds of speech.";
     }
-    if (durationSec !== null && durationSec < 2) {
-      return "Recording was too short. Speak for at least 5 seconds before submitting.";
+    if (durationSec !== null && durationSec < 3) {
+      return "Recording was too short. Speak for at least 5 seconds.";
     }
     return null;
   }, []);

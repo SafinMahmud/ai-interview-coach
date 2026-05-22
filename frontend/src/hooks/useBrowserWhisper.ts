@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { pipeline, env } from "@xenova/transformers";
+import { measurePeakRms, MIN_SPEECH_RMS } from "@/utils/audioLevel";
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
@@ -17,8 +18,7 @@ type AsrTranscriber = (
   }
 ) => Promise<{ text?: string }>;
 
-/** Better accuracy than whisper-tiny; still runs in-browser. */
-const MODEL_ID = "Xenova/whisper-base.en";
+const MODEL_ID = "Xenova/whisper-tiny.en";
 
 let transcriberPromise: Promise<AsrTranscriber> | null = null;
 
@@ -32,12 +32,19 @@ function loadTranscriber() {
   return transcriberPromise;
 }
 
-/** Resample browser recording to 16 kHz mono — what Whisper expects. */
 async function blobToMono16k(blob: Blob): Promise<Float32Array> {
   const arrayBuffer = await blob.arrayBuffer();
   const ctx = new AudioContext();
-  const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
-  await ctx.close();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+  } finally {
+    await ctx.close();
+  }
+
+  if (decoded.duration < 0.5) {
+    throw new Error("Recording too short — speak for at least 5 seconds.");
+  }
 
   const sampleCount = Math.max(1, Math.ceil(decoded.duration * 16000));
   const offline = new OfflineAudioContext(1, sampleCount, 16000);
@@ -51,7 +58,10 @@ async function blobToMono16k(blob: Blob): Promise<Float32Array> {
 
 function cleanTranscript(raw: string): string {
   return raw
-    .replace(/\[(?:INAUDIBLE|inaudible|unclear|unintelligible)\]/gi, " ")
+    .replace(
+      /\[(?:INAUDIBLE|inaudible|BLANK_AUDIO|blank audio|silence|unclear|unintelligible)\]/gi,
+      " "
+    )
     .replace(/\((?:inaudible|unintelligible)\)/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -62,7 +72,7 @@ function isMeaningfulTranscript(text: string): boolean {
   return letters.length >= 8;
 }
 
-/** Whisper runs fully in the browser — safe for Vercel + Render free tier. */
+/** Fallback STT in browser — heavier and less reliable than Web Speech. */
 export function useBrowserWhisper() {
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
@@ -71,13 +81,11 @@ export function useBrowserWhisper() {
   const preloadModel = useCallback(async () => {
     setError(null);
     setStatus("loading_model");
-    setMessage(
-      "Downloading speech model (~75MB, cached in browser after first load)..."
-    );
+    setMessage("Downloading speech model (~40MB, cached after first use)...");
     try {
       await loadTranscriber();
       setStatus("ready");
-      setMessage("Model ready — you can Start recording whenever you like.");
+      setMessage("Model ready.");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Failed to load model");
@@ -90,10 +98,17 @@ export function useBrowserWhisper() {
     setStatus("loading_model");
     setMessage("Loading speech model...");
     try {
+      const audio = await blobToMono16k(blob);
+      const rms = measurePeakRms(audio);
+      if (rms < MIN_SPEECH_RMS) {
+        throw new Error(
+          `Microphone level too low (silence detected). Use Live captions (Chrome), speak louder for 5+ seconds, or Type answer.`
+        );
+      }
+
       const transcriber = await loadTranscriber();
       setStatus("transcribing");
-      setMessage("Transcribing in your browser...");
-      const audio = await blobToMono16k(blob);
+      setMessage("Transcribing...");
       const result = await transcriber(audio, {
         return_timestamps: false,
         language: "english",
@@ -104,7 +119,7 @@ export function useBrowserWhisper() {
       const text = cleanTranscript(String(result?.text ?? ""));
       if (!isMeaningfulTranscript(text)) {
         throw new Error(
-          "Speech was unclear (got [INAUDIBLE] or silence). Speak louder, closer to the mic, in a quiet room, for at least 5–10 seconds — or use Type answer."
+          "Could not understand the recording. Prefer Live captions (Chrome) or Type answer."
         );
       }
       setStatus("ready");
