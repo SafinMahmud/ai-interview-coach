@@ -44,15 +44,13 @@ npm run dev
 
 Open http://localhost:5173
 
-### Optional: local Whisper
+### Voice on production (Render + Vercel)
 
-```bash
-pip install -r requirements-local.txt
-```
+- **Record answer** — audio is sent to your API; transcription uses **Groq Whisper API** (`whisper-large-v3-turbo`). Requires `GROQ_API_KEY` on Render. No local model RAM.
+- **Live captions** — optional in Chrome; uses Google (can fail with VPN/ad blockers).
+- **Type answer** — always works.
 
-Set `ENABLE_LOCAL_WHISPER=true` and `WHISPER_MODEL_SIZE=base` in `.env`.
-
-**Render free tier:** keep `ENABLE_LOCAL_WHISPER=false` and do not install `faster-whisper` (it exceeds ~512MB RAM). Use **Web Speech** or **type answer** on the hosted app.
+Local dev with `ENABLE_LOCAL_WHISPER=true`: `pip install -r requirements-local.txt` for offline faster-whisper instead of Groq API.
 
 ## Environment variables
 

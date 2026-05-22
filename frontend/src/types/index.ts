@@ -1,5 +1,6 @@
 export type TranscriptSource =
   | "local_whisper"
+  | "groq_stt"
   | "browser_whisper"
   | "web_speech"
   | "text";

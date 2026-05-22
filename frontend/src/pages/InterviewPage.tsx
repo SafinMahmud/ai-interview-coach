@@ -1,33 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { ScoreDisplay } from "@/components/ScoreDisplay";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
-import { useBrowserWhisper } from "@/hooks/useBrowserWhisper";
 import { useWebSpeech } from "@/hooks/useWebSpeech";
 import { TranscriptPanel } from "@/components/TranscriptPanel";
 import type { Question, Score, SessionHistory, TranscriptSource } from "@/types";
 
-type AnswerMode = "web_speech" | "browser_whisper" | "text";
-
-function defaultVoiceMode(): AnswerMode {
-  if (typeof window === "undefined") return "text";
-  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-    return "web_speech";
-  }
-  if (typeof MediaRecorder !== "undefined") {
-    return "browser_whisper";
-  }
-  return "text";
-}
+type AnswerMode = "server_record" | "web_speech" | "text";
 
 export default function InterviewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [manualText, setManualText] = useState("");
-  const initialMode = useMemo(() => defaultVoiceMode(), []);
-  const [mode, setMode] = useState<AnswerMode>(initialMode);
+  const [mode, setMode] = useState<AnswerMode>("server_record");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [score, setScore] = useState<Score | null>(null);
@@ -43,7 +30,10 @@ export default function InterviewPage() {
 
   const speech = useWebSpeech();
   const recorder = useAudioRecorder();
-  const browserWhisper = useBrowserWhisper();
+
+  const speechSupported =
+    typeof window !== "undefined" &&
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -65,12 +55,10 @@ export default function InterviewPage() {
     if (mode === "web_speech") {
       if (!speech.transcript.trim()) {
         throw new Error(
-          "Click Start listening, allow the microphone, speak your answer (text appears below), then Submit. Requires Chrome/Edge and internet."
+          "Click Start listening, speak (text appears below), then Submit. Needs Chrome/Edge + internet."
         );
       }
-      if (speech.listening) {
-        speech.stop();
-      }
+      if (speech.listening) speech.stop();
       return { text: speech.transcript.trim(), source: "web_speech" };
     }
 
@@ -89,9 +77,13 @@ export default function InterviewPage() {
     if (validationError) {
       throw new Error(validationError);
     }
-    const text = await browserWhisper.transcribe(blob);
+    const { transcript } = await api.transcribe(blob);
+    const text = transcript.trim();
+    if (!text) {
+      throw new Error("No speech detected. Speak louder and try again, or use Type answer.");
+    }
     setLastTranscript(text);
-    return { text, source: "browser_whisper" };
+    return { text, source: "groq_stt" };
   }
 
   async function submitAndEvaluate() {
@@ -138,7 +130,6 @@ export default function InterviewPage() {
     setShowTranscript(false);
     setLastTranscript("");
     speech.reset();
-    browserWhisper.reset();
     recorder.reset();
     setManualText("");
     setError(null);
@@ -148,7 +139,7 @@ export default function InterviewPage() {
     return <p>Loading questions...</p>;
   }
 
-  const busy = loading || browserWhisper.isBusy;
+  const busy = loading;
 
   return (
     <div>
@@ -163,22 +154,22 @@ export default function InterviewPage() {
       <div className="card">
         <h3>How do you want to answer?</h3>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          {speech.supported && (
+          <button
+            type="button"
+            className={mode === "server_record" ? "" : "secondary"}
+            onClick={() => setMode("server_record")}
+          >
+            Record answer (recommended)
+          </button>
+          {speechSupported && (
             <button
               type="button"
               className={mode === "web_speech" ? "" : "secondary"}
               onClick={() => setMode("web_speech")}
             >
-              Live voice (recommended)
+              Live captions (optional)
             </button>
           )}
-          <button
-            type="button"
-            className={mode === "browser_whisper" ? "" : "secondary"}
-            onClick={() => setMode("browser_whisper")}
-          >
-            Record &amp; transcribe (fallback)
-          </button>
           <button
             type="button"
             className={mode === "text" ? "" : "secondary"}
@@ -188,17 +179,63 @@ export default function InterviewPage() {
           </button>
         </div>
 
-        {mode === "web_speech" && speech.supported && (
+        {mode === "server_record" && (
           <div style={{ marginTop: "1rem" }}>
+            <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: 0 }}>
+              Records your voice and transcribes on the server via Groq (reliable on
+              Vercel + Render). Works in any modern browser.
+            </p>
             <ol className="recording-steps">
               <li>
-                Click <strong>Start listening</strong> (allow microphone).
+                <strong>Start recording</strong> → allow microphone.
               </li>
+              <li>Speak clearly for <strong>5+ seconds</strong>.</li>
               <li>
-                Speak your answer — text appears live below (Chrome/Edge + internet).
+                <strong>Submit &amp; evaluate</strong>.
               </li>
+            </ol>
+            <p className="recording-status" data-active={recorder.recording}>
+              {recorder.recording
+                ? "● Recording — speak now"
+                : recorder.hasStarted
+                  ? "Ready — click Submit"
+                  : "Click Start recording"}
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                recorder.start().catch(() =>
+                  setError("Microphone access denied or unavailable.")
+                )
+              }
+              disabled={recorder.recording || busy}
+            >
+              Start recording
+            </button>
+            {lastTranscript && (
+              <textarea
+                rows={4}
+                readOnly
+                value={lastTranscript}
+                style={{ marginTop: "0.75rem" }}
+              />
+            )}
+          </div>
+        )}
+
+        {mode === "web_speech" && speechSupported && (
+          <div style={{ marginTop: "1rem" }}>
+            <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: 0 }}>
+              Uses Google speech in the browser. Can fail with VPN, ad blockers, or
+              network issues — use Record answer if this errors.
+            </p>
+            <ol className="recording-steps">
               <li>
-                Click <strong>Submit &amp; evaluate</strong> when done.
+                <strong>Start listening</strong> → allow microphone.
+              </li>
+              <li>Speak — text appears live below.</li>
+              <li>
+                <strong>Submit &amp; evaluate</strong>.
               </li>
             </ol>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -219,60 +256,9 @@ export default function InterviewPage() {
               rows={6}
               readOnly
               value={speech.transcript}
-              placeholder="Your words will appear here as you speak…"
+              placeholder="Your words appear here as you speak…"
               style={{ marginTop: "0.75rem" }}
             />
-          </div>
-        )}
-
-        {mode === "browser_whisper" && (
-          <div style={{ marginTop: "1rem" }}>
-            <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: 0 }}>
-              Fallback if Live voice fails. Downloads a model on first use (~40MB).
-              Live voice is faster and usually more accurate in Chrome.
-            </p>
-            <ol className="recording-steps">
-              <li>
-                <strong>Start recording</strong> → allow microphone.
-              </li>
-              <li>Speak clearly for <strong>5+ seconds</strong>.</li>
-              <li>
-                <strong>Submit &amp; evaluate</strong> (stops recording automatically).
-              </li>
-            </ol>
-            <p className="recording-status" data-active={recorder.recording}>
-              {recorder.recording
-                ? "● Recording — speak now"
-                : recorder.isStopped
-                  ? "✓ Saved — click Submit"
-                  : recorder.hasStarted
-                    ? "Ready — click Submit"
-                    : "Click Start recording"}
-            </p>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() =>
-                  recorder.start().catch(() =>
-                    setError("Microphone access denied or unavailable.")
-                  )
-                }
-                disabled={recorder.recording || busy}
-              >
-                Start recording
-              </button>
-            </div>
-            {browserWhisper.message && (
-              <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
-                {browserWhisper.message}
-              </p>
-            )}
-            {browserWhisper.error && (
-              <p className="error">{browserWhisper.error}</p>
-            )}
-            {lastTranscript && (
-              <textarea rows={4} readOnly value={lastTranscript} style={{ marginTop: "0.75rem" }} />
-            )}
           </div>
         )}
 
@@ -299,7 +285,7 @@ export default function InterviewPage() {
       >
         <button type="button" onClick={submitAndEvaluate} disabled={busy}>
           {loading
-            ? mode === "browser_whisper"
+            ? mode === "server_record"
               ? "Transcribing & evaluating…"
               : "Evaluating…"
             : "Submit & evaluate"}

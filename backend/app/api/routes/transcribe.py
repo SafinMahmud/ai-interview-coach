@@ -16,7 +16,7 @@ async def transcribe(file: UploadFile = File(...)) -> TranscribeResponse:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
     try:
-        transcript = transcribe_audio(content, file.filename or "audio.webm")
+        transcript = await transcribe_audio(content, file.filename or "audio.webm")
     except TranscriptionUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

@@ -15,6 +15,7 @@ export function useWebSpeech() {
   const [supported] = useState(() => !!getSpeechRecognitionCtor());
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const wantListeningRef = useRef(false);
+  const networkRetriesRef = useRef(0);
 
   const start = useCallback(() => {
     const SpeechRecognition = getSpeechRecognitionCtor();
@@ -25,6 +26,7 @@ export function useWebSpeech() {
 
     setError(null);
     wantListeningRef.current = true;
+    networkRetriesRef.current = 0;
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
@@ -40,11 +42,31 @@ export function useWebSpeech() {
 
     recognition.onerror = (event: Event) => {
       const code = (event as SpeechRecognitionErrorEvent).error;
+
+      if (code === "network" && networkRetriesRef.current < 2) {
+        networkRetriesRef.current += 1;
+        setError(`Reconnecting to speech service (attempt ${networkRetriesRef.current + 1}/3)…`);
+        window.setTimeout(() => {
+          if (!wantListeningRef.current) return;
+          try {
+            recognition.start();
+            setError(null);
+          } catch {
+            setError(
+              "Speech service unreachable. Use Record answer (recommended) or Type answer. Disable VPN/ad blockers if using Live captions."
+            );
+            wantListeningRef.current = false;
+            setListening(false);
+          }
+        }, 800);
+        return;
+      }
+
       const messages: Record<string, string> = {
         "not-allowed":
           "Microphone blocked. Allow mic access for this site in browser settings.",
         network:
-          "Speech service unreachable. Live captions need internet (uses Google). Try Record mode or Type answer.",
+          "Speech service unreachable (Google). Use Record answer or Type answer. Try disabling VPN/ad blockers.",
         "no-speech": "No speech heard. Speak after clicking Start listening.",
         aborted: "Listening stopped.",
         "audio-capture": "No microphone found. Plug in a mic or use Type answer.",
@@ -88,6 +110,7 @@ export function useWebSpeech() {
 
   const reset = useCallback(() => {
     wantListeningRef.current = false;
+    networkRetriesRef.current = 0;
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     setTranscript("");

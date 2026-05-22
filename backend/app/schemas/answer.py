@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class TranscriptSource(str, Enum):
     LOCAL_WHISPER = "local_whisper"
+    GROQ_STT = "groq_stt"
     BROWSER_WHISPER = "browser_whisper"
     WEB_SPEECH = "web_speech"
     TEXT = "text"

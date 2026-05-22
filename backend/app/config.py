@@ -37,8 +37,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
-    # Set false on Render (free tier cannot load Whisper models in memory)
-    enable_local_whisper: bool = True
+    # false on Render → uses Groq Whisper API (no local RAM). true → local faster-whisper
+    enable_local_whisper: bool = False
+    groq_whisper_model: str = "whisper-large-v3-turbo"
 
     whisper_model_size: str = "base"
     whisper_device: str = "cpu"
