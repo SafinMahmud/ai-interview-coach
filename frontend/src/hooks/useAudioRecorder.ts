@@ -2,6 +2,10 @@ import { useCallback, useRef, useState } from "react";
 
 const MIN_BLOB_BYTES = 2000;
 
+const PREFERRED_MIME = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+  ? "audio/webm;codecs=opus"
+  : "audio/webm";
+
 /** MediaRecorder for in-browser Whisper transcription. */
 export function useAudioRecorder() {
   const [recording, setRecording] = useState(false);
@@ -12,11 +16,17 @@ export function useAudioRecorder() {
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
 
-  const buildBlob = () => new Blob(chunksRef.current, { type: "audio/webm" });
+  const buildBlob = () => new Blob(chunksRef.current, { type: PREFERRED_MIME });
 
   const start = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    const recorder = new MediaRecorder(stream, { mimeType: PREFERRED_MIME });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);

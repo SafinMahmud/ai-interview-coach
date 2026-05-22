@@ -171,7 +171,10 @@ export default function InterviewPage() {
               <li>
                 Click <strong>Start recording</strong> and allow microphone access.
               </li>
-              <li>Speak your answer clearly for at least <strong>5–10 seconds</strong>.</li>
+              <li>
+                Speak clearly, close to the mic, in a quiet room, for at least{" "}
+                <strong>5–10 seconds</strong>.
+              </li>
               <li>
                 Click <strong>Submit &amp; evaluate</strong> when finished — you do{" "}
                 <em>not</em> need to press Stop first.
@@ -224,7 +227,7 @@ export default function InterviewPage() {
               >
                 Download speech model early
               </button>{" "}
-              (~40MB once per browser). You do <em>not</em> need this before recording —
+              (~75MB once per browser). You do <em>not</em> need this before recording —
               Submit downloads it automatically the first time.
             </p>
             {browserWhisper.message && (

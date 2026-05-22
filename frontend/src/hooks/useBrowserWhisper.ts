@@ -7,9 +7,18 @@ env.useBrowserCache = true;
 type Status = "idle" | "loading_model" | "transcribing" | "ready" | "error";
 
 type AsrTranscriber = (
-  input: string,
-  options?: { return_timestamps?: boolean; language?: string; task?: string }
+  input: Float32Array,
+  options?: {
+    return_timestamps?: boolean;
+    language?: string;
+    task?: string;
+    chunk_length_s?: number;
+    stride_length_s?: number;
+  }
 ) => Promise<{ text?: string }>;
+
+/** Better accuracy than whisper-tiny; still runs in-browser. */
+const MODEL_ID = "Xenova/whisper-base.en";
 
 let transcriberPromise: Promise<AsrTranscriber> | null = null;
 
@@ -17,10 +26,40 @@ function loadTranscriber() {
   if (!transcriberPromise) {
     transcriberPromise = pipeline(
       "automatic-speech-recognition",
-      "Xenova/whisper-tiny.en"
+      MODEL_ID
     ) as Promise<AsrTranscriber>;
   }
   return transcriberPromise;
+}
+
+/** Resample browser recording to 16 kHz mono — what Whisper expects. */
+async function blobToMono16k(blob: Blob): Promise<Float32Array> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const ctx = new AudioContext();
+  const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+  await ctx.close();
+
+  const sampleCount = Math.max(1, Math.ceil(decoded.duration * 16000));
+  const offline = new OfflineAudioContext(1, sampleCount, 16000);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start(0);
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+
+function cleanTranscript(raw: string): string {
+  return raw
+    .replace(/\[(?:INAUDIBLE|inaudible|unclear|unintelligible)\]/gi, " ")
+    .replace(/\((?:inaudible|unintelligible)\)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMeaningfulTranscript(text: string): boolean {
+  const letters = text.replace(/[^a-zA-Z]/g, "");
+  return letters.length >= 8;
 }
 
 /** Whisper runs fully in the browser — safe for Vercel + Render free tier. */
@@ -32,7 +71,9 @@ export function useBrowserWhisper() {
   const preloadModel = useCallback(async () => {
     setError(null);
     setStatus("loading_model");
-    setMessage("Downloading speech model (~40MB, cached in browser after first load)...");
+    setMessage(
+      "Downloading speech model (~75MB, cached in browser after first load)..."
+    );
     try {
       await loadTranscriber();
       setStatus("ready");
@@ -52,25 +93,23 @@ export function useBrowserWhisper() {
       const transcriber = await loadTranscriber();
       setStatus("transcribing");
       setMessage("Transcribing in your browser...");
-      const url = URL.createObjectURL(blob);
-      try {
-        const result = await transcriber(url, {
-          return_timestamps: false,
-          language: "english",
-          task: "transcribe",
-        });
-        const text = String(result?.text ?? "").trim();
-        if (!text) {
-          throw new Error(
-            "We couldn't detect speech. Use Start recording, speak clearly for 5–10 seconds, then Submit & evaluate. Check your microphone and try again."
-          );
-        }
-        setStatus("ready");
-        setMessage("");
-        return text;
-      } finally {
-        URL.revokeObjectURL(url);
+      const audio = await blobToMono16k(blob);
+      const result = await transcriber(audio, {
+        return_timestamps: false,
+        language: "english",
+        task: "transcribe",
+        chunk_length_s: 30,
+        stride_length_s: 5,
+      });
+      const text = cleanTranscript(String(result?.text ?? ""));
+      if (!isMeaningfulTranscript(text)) {
+        throw new Error(
+          "Speech was unclear (got [INAUDIBLE] or silence). Speak louder, closer to the mic, in a quiet room, for at least 5–10 seconds — or use Type answer."
+        );
       }
+      setStatus("ready");
+      setMessage("");
+      return text;
     } catch (err) {
       setStatus("error");
       const msg = err instanceof Error ? err.message : "Transcription failed";
