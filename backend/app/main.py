@@ -62,7 +62,15 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "app": settings.app_name}
+        transcription = (
+            "local_whisper" if settings.enable_local_whisper else "groq_api"
+        )
+        return {
+            "status": "ok",
+            "app": settings.app_name,
+            "transcription": transcription,
+            "groq_api_key_set": bool(settings.groq_api_key.strip()),
+        }
 
     return app
 
