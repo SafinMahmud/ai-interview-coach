@@ -54,7 +54,7 @@ export default function InterviewPage() {
     }
     if (!recorder.hasStarted) {
       throw new Error(
-        "Click Start recording first, allow the microphone, speak your answer, then click Submit & evaluate."
+        "Click Start recording first and allow the microphone. Then speak and click Submit & evaluate (Stop recording is optional)."
       );
     }
     let blob: Blob;
@@ -62,7 +62,7 @@ export default function InterviewPage() {
       blob = await recorder.stop();
     } catch {
       throw new Error(
-        "Click Start recording first, allow the microphone, speak your answer, then click Submit & evaluate."
+        "Could not read your recording. Click Start recording, allow the microphone, speak, then Submit."
       );
     }
     const validationError = recorder.validateBlob(blob, recorder.lastDurationSec);
@@ -173,21 +173,27 @@ export default function InterviewPage() {
               </li>
               <li>Speak your answer clearly for at least <strong>5–10 seconds</strong>.</li>
               <li>
-                Click <strong>Submit &amp; evaluate</strong> when you are done (this stops
-                recording and transcribes).
+                Click <strong>Submit &amp; evaluate</strong> when finished — you do{" "}
+                <em>not</em> need to press Stop first.
               </li>
             </ol>
             <p className="recording-status" data-active={recorder.recording}>
               {recorder.recording
-                ? "● Recording — speak now, then click Submit & evaluate"
-                : recorder.hasStarted
-                  ? "Recording stopped — click Submit & evaluate or Start recording again"
-                  : "Not recording — click Start recording to begin"}
+                ? "● Recording — speak now, then Submit & evaluate"
+                : recorder.isStopped
+                  ? "✓ Recording saved — click Submit & evaluate"
+                  : recorder.hasStarted
+                    ? "Ready — click Submit & evaluate"
+                    : "Click Start recording to begin"}
             </p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button
                 type="button"
-                onClick={() => recorder.start().catch(() => setError("Microphone access was denied or unavailable."))}
+                onClick={() =>
+                  recorder.start().catch(() =>
+                    setError("Microphone access was denied or unavailable.")
+                  )
+                }
                 disabled={recorder.recording || busy}
               >
                 Start recording
@@ -196,13 +202,16 @@ export default function InterviewPage() {
                 type="button"
                 className="secondary"
                 onClick={() =>
-                  recorder.stop().catch(() => {
-                    /* ignore if not active */
-                  })
+                  recorder
+                    .stop()
+                    .catch(() =>
+                      setError("Stop failed — try Start recording again.")
+                    )
                 }
                 disabled={!recorder.recording || busy}
+                title="Optional — Submit also stops the recording for you"
               >
-                Stop recording
+                Stop recording (optional)
               </button>
             </div>
             <p className="recording-optional">

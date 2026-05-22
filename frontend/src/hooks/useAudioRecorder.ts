@@ -6,10 +6,13 @@ const MIN_BLOB_BYTES = 2000;
 export function useAudioRecorder() {
   const [recording, setRecording] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [isStopped, setIsStopped] = useState(false);
   const [lastDurationSec, setLastDurationSec] = useState<number | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
+
+  const buildBlob = () => new Blob(chunksRef.current, { type: "audio/webm" });
 
   const start = useCallback(async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -18,37 +21,48 @@ export function useAudioRecorder() {
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
-    recorder.start();
+    // Timeslice so audio is captured even if Stop is used before Submit
+    recorder.start(500);
     mediaRef.current = recorder;
     startedAtRef.current = Date.now();
     setHasStarted(true);
+    setIsStopped(false);
     setRecording(true);
     setLastDurationSec(null);
   }, []);
 
   const stop = useCallback((): Promise<Blob> => {
     return new Promise((resolve, reject) => {
-      const recorder = mediaRef.current;
-      if (!recorder || !hasStarted) {
+      if (!hasStarted) {
         reject(new Error("NOT_STARTED"));
         return;
       }
-      if (recorder.state === "inactive") {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        resolve(blob);
+
+      if (isStopped || !mediaRef.current) {
+        resolve(buildBlob());
         return;
       }
+
+      const recorder = mediaRef.current;
+      if (recorder.state === "inactive") {
+        setIsStopped(true);
+        setRecording(false);
+        resolve(buildBlob());
+        return;
+      }
+
       recorder.onstop = () => {
         recorder.stream.getTracks().forEach((t) => t.stop());
         const duration = (Date.now() - startedAtRef.current) / 1000;
         setLastDurationSec(Math.round(duration));
         setRecording(false);
+        setIsStopped(true);
         mediaRef.current = null;
-        resolve(new Blob(chunksRef.current, { type: "audio/webm" }));
+        resolve(buildBlob());
       };
       recorder.stop();
     });
-  }, [hasStarted]);
+  }, [hasStarted, isStopped]);
 
   const reset = useCallback(() => {
     if (mediaRef.current && mediaRef.current.state !== "inactive") {
@@ -59,6 +73,7 @@ export function useAudioRecorder() {
     chunksRef.current = [];
     setRecording(false);
     setHasStarted(false);
+    setIsStopped(false);
     setLastDurationSec(null);
   }, []);
 
@@ -75,6 +90,7 @@ export function useAudioRecorder() {
   return {
     recording,
     hasStarted,
+    isStopped,
     lastDurationSec,
     start,
     stop,
