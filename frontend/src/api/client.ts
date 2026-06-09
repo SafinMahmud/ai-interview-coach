@@ -72,7 +72,10 @@ export const api = {
   transcribe: async (file: Blob, filename = "recording.webm") => {
     const form = new FormData();
     form.append("file", file, filename);
-    return request<{ transcript: string }>("/api/v1/transcribe", {
+    return request<{
+      transcript: string;
+      source: import("@/types").TranscriptSource;
+    }>("/api/v1/transcribe", {
       method: "POST",
       body: form,
     });

@@ -77,13 +77,13 @@ export default function InterviewPage() {
     if (validationError) {
       throw new Error(validationError);
     }
-    const { transcript } = await api.transcribe(blob);
+    const { transcript, source } = await api.transcribe(blob);
     const text = transcript.trim();
     if (!text) {
       throw new Error("No speech detected. Speak louder and try again, or use Type answer.");
     }
     setLastTranscript(text);
-    return { text, source: "groq_stt" };
+    return { text, source };
   }
 
   async function submitAndEvaluate() {
@@ -182,8 +182,8 @@ export default function InterviewPage() {
         {mode === "server_record" && (
           <div style={{ marginTop: "1rem" }}>
             <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: 0 }}>
-              Records your voice and transcribes on the server via Groq (reliable on
-              Vercel + Render). Works in any modern browser.
+              Records your voice and transcribes locally with faster-whisper (offline,
+              no API needed). First use downloads the base model (~150 MB).
             </p>
             <ol className="recording-steps">
               <li>

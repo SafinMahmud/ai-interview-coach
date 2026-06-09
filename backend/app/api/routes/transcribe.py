@@ -1,9 +1,11 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.schemas.answer import TranscribeResponse
+from app.schemas.answer import TranscriptSource
 from app.services.transcription.service import (
     TranscriptionUnavailableError,
     transcribe_audio,
+    transcription_source,
 )
 
 router = APIRouter(prefix="/transcribe")
@@ -22,4 +24,7 @@ async def transcribe(file: UploadFile = File(...)) -> TranscribeResponse:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return TranscribeResponse(transcript=transcript)
+    return TranscribeResponse(
+        transcript=transcript,
+        source=TranscriptSource(transcription_source()),
+    )

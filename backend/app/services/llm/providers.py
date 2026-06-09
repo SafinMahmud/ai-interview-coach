@@ -1,10 +1,14 @@
+import asyncio
 import json
 import re
 
 from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
+from openai import APIConnectionError, AsyncOpenAI
 
 from app.config import Settings
+
+_LLM_CONNECT_RETRIES = 3
+_LLM_CONNECT_RETRY_DELAY_SEC = 0.75
 
 
 def _extract_json(text: str) -> str:
@@ -18,6 +22,19 @@ def _extract_json(text: str) -> str:
     return text
 
 
+async def _with_connection_retries(coro_factory):
+    last_exc: Exception | None = None
+    for attempt in range(_LLM_CONNECT_RETRIES):
+        try:
+            return await coro_factory()
+        except APIConnectionError as exc:
+            last_exc = exc
+            if attempt + 1 >= _LLM_CONNECT_RETRIES:
+                break
+            await asyncio.sleep(_LLM_CONNECT_RETRY_DELAY_SEC * (attempt + 1))
+    raise last_exc  # type: ignore[misc]
+
+
 class GroqProvider:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -27,15 +44,18 @@ class GroqProvider:
         )
 
     async def complete_json(self, system_prompt: str, user_prompt: str) -> str:
-        response = await self._client.chat.completions.create(
-            model=self._settings.llm_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.4,
-        )
+        async def _call():
+            return await self._client.chat.completions.create(
+                model=self._settings.llm_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.4,
+            )
+
+        response = await _with_connection_retries(_call)
         return _extract_json(response.choices[0].message.content or "{}")
 
 

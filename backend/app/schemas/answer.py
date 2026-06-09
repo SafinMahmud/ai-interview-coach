@@ -30,3 +30,4 @@ class AnswerResponse(BaseModel):
 
 class TranscribeResponse(BaseModel):
     transcript: str
+    source: TranscriptSource

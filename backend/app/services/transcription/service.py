@@ -1,5 +1,6 @@
 """Audio transcription: Groq API (hosted) or optional local faster-whisper."""
 
+import asyncio
 from functools import lru_cache
 from pathlib import Path
 import tempfile
@@ -87,6 +88,10 @@ def transcribe_with_local_whisper(file_bytes: bytes, filename: str = "audio.webm
         Path(tmp_path).unlink(missing_ok=True)
 
 
+def transcription_source() -> str:
+    return "local_whisper" if get_settings().enable_local_whisper else "groq_stt"
+
+
 async def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> str:
     """
     Hosted: Groq Whisper API (ENABLE_LOCAL_WHISPER=false, default on Render).
@@ -95,6 +100,8 @@ async def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> s
     settings = get_settings()
 
     if settings.enable_local_whisper:
-        return transcribe_with_local_whisper(file_bytes, filename)
+        return await asyncio.to_thread(
+            transcribe_with_local_whisper, file_bytes, filename
+        )
 
     return await transcribe_with_groq(file_bytes, filename)
